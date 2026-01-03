@@ -1,0 +1,19 @@
+{
+  "expo": {
+    "name": "Evenly",
+    "slug": "evenly",
+    "version": "1.0.0",
+    "scheme": "evenly",
+    "orientation": "portrait",
+    "platforms": [
+      "ios",
+      "android"
+    ],
+    "assetBundlePatterns": [
+      "**/*"
+    ],
+    "experiments": {
+      "typedRoutes": true
+    }
+  }
+}
