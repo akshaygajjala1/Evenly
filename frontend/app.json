@@ -5,9 +5,11 @@
     "version": "1.0.0",
     "scheme": "evenly",
     "orientation": "portrait",
+    "entryPoint": "./index.js",
     "platforms": [
       "ios",
-      "android"
+      "android",
+      "web"
     ],
     "assetBundlePatterns": [
       "**/*"
