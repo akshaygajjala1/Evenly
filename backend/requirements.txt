@@ -3,3 +3,7 @@ uvicorn[standard]
 motor
 python-dotenv
 pydantic
+pytesseract 
+pillow 
+opencv-python 
+numpy
