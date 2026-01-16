@@ -1,20 +1,11 @@
-const React = require("react");
-const { ActivityIndicator, View, StyleSheet } = require("react-native");
+// shims/LoadingView.js
+import React from "react";
+import { View, ActivityIndicator } from "react-native";
 
-function LoadingView() {
+export default function LoadingView() {
   return (
-    <View style={styles.container}>
-      <ActivityIndicator size="large" />
+    <View style={{ flex: 1, justifyContent: "center", alignItems: "center" }}>
+      <ActivityIndicator size="large" color="#0000ff" />
     </View>
   );
 }
-
-const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-    alignItems: "center",
-    justifyContent: "center"
-  }
-});
-
-module.exports = LoadingView;
