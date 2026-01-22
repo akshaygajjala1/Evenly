@@ -1,4 +1,4 @@
-const API_BASE_URL = "http://localhost:8000";
+const API_BASE_URL = "http://172.20.10.3:3000";
 
 export interface ReceiptItem {
   id: string;
@@ -43,24 +43,60 @@ class BackendService {
   }
 
   async uploadReceipt(imageUri: string): Promise<Receipt> {
-    const formData = new FormData();
+    console.log("Uploading receipt to:", `${API_BASE_URL}/upload-receipt`);
+    console.log("Image URI:", imageUri);
     
-    // For React Native, we need to fetch the image data first
-    const response = await fetch(imageUri);
-    const blob = await response.blob();
-    formData.append("file", blob, "receipt.jpg");
+    try {
+      // Use React Native's fetch with proper file handling
+      const formData = new FormData();
+      
+      // Create a proper file object from the URI
+      const uri = imageUri;
+      const fileType = uri.split('.').pop() || 'jpg';
+      
+      formData.append('file', {
+        uri: uri,
+        type: `image/${fileType}`,
+        name: `receipt.${fileType}`,
+      } as any);
 
-    const response2 = await fetch(`${API_BASE_URL}/upload-receipt`, {
-      method: "POST",
-      headers: {}, // Let browser set Content-Type for FormData
-      body: formData,
-    });
+      const response = await fetch(`${API_BASE_URL}/upload-receipt`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'multipart/form-data',
+        },
+        body: formData,
+      });
 
-    if (!response2.ok) {
-      throw new Error(`Upload failed: ${response2.status}`);
+      console.log("Upload response status:", response.status);
+      
+      if (!response.ok) {
+        const errorText = await response.text();
+        console.error("Upload failed:", errorText);
+        throw new Error(`Upload failed: ${response.status} - ${errorText}`);
+      }
+
+      const result = await response.json();
+      console.log("Upload success:", result);
+      return result;
+    } catch (error) {
+      console.error("Network error during upload:", error);
+      throw error;
     }
+  }
 
-    return await response2.json();
+  // Test connection to backend
+  async testConnection(): Promise<boolean> {
+    try {
+      console.log("Testing connection to:", `${API_BASE_URL}/test`);
+      const response = await fetch(`${API_BASE_URL}/test`);
+      const result = await response.json();
+      console.log("Connection test result:", result);
+      return response.ok;
+    } catch (error) {
+      console.error("Connection test failed:", error);
+      return false;
+    }
   }
 
   // Fallback OCR processing if backend isn't available
