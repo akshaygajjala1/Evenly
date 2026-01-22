@@ -3,14 +3,17 @@ import { useState } from "react";
 import { Pressable, SafeAreaView, StyleSheet, Text, View, Alert } from "react-native";
 import Camera from "../components/Camera";
 import * as ImagePicker from "expo-image-picker";
+import { backendService, Receipt } from "../services/backend";
 
 export default function ScanScreen() {
   const router = useRouter();
   const [capturedPhoto, setCapturedPhoto] = useState<any>(null);
   const [isProcessing, setIsProcessing] = useState(false);
+  const [processedReceipt, setProcessedReceipt] = useState<Receipt | null>(null);
 
   const handlePhotoTaken = (photo: any) => {
     setCapturedPhoto(photo);
+    setProcessedReceipt(null); // Reset previous receipt
   };
 
   const handleUsePhoto = async () => {
@@ -21,16 +24,32 @@ export default function ScanScreen() {
 
     setIsProcessing(true);
     try {
-      // Simulate OCR processing
-      await new Promise(resolve => setTimeout(resolve, 2000));
-      Alert.alert("Success", "Receipt processed successfully!", [
-        { text: "OK", onPress: () => router.push("/assign") }
-      ]);
+      // Process the receipt image using your backend OCR
+      const receipt = await backendService.processReceiptImage(capturedPhoto.uri);
+      setProcessedReceipt(receipt);
+      
+      Alert.alert(
+        "Receipt Processed!", 
+        `Found ${receipt.items.length} items with total $${receipt.total.toFixed(2)}`,
+        [
+          { text: "View Items", onPress: () => navigateToAssign(receipt) },
+          { text: "Cancel", style: "cancel" }
+        ]
+      );
     } catch (error) {
-      Alert.alert("Error", "Failed to process receipt");
+      Alert.alert("Error", "Failed to process receipt. Please try again.");
     } finally {
       setIsProcessing(false);
     }
+  };
+
+  const navigateToAssign = (receipt: Receipt) => {
+    // Store receipt data for the assign screen
+    // In a real app, you'd use a state management solution
+    router.push({
+      pathname: "/assign",
+      params: { receiptData: JSON.stringify(receipt) }
+    });
   };
 
   const handlePickImage = async () => {
@@ -43,11 +62,13 @@ export default function ScanScreen() {
 
     if (!result.canceled) {
       setCapturedPhoto(result.assets[0]);
+      setProcessedReceipt(null); // Reset previous receipt
     }
   };
 
   const handleRetake = () => {
     setCapturedPhoto(null);
+    setProcessedReceipt(null);
   };
 
   return (
@@ -58,8 +79,29 @@ export default function ScanScreen() {
         <Camera onPhotoTaken={handlePhotoTaken} />
       ) : (
         <View style={styles.photoPreview}>
-          <Text style={styles.previewTitle}>Photo captured</Text>
-          <Text style={styles.previewSubtitle}>Tap below to use this photo or retake</Text>
+          {processedReceipt ? (
+            <View style={styles.receiptSummary}>
+              <Text style={styles.previewTitle}>✅ Receipt Processed</Text>
+              <Text style={styles.previewSubtitle}>
+                {processedReceipt.items.length} items • Total ${processedReceipt.total.toFixed(2)}
+              </Text>
+              <View style={styles.itemsList}>
+                {processedReceipt.items.slice(0, 3).map((item) => (
+                  <Text key={item.id} style={styles.itemText}>
+                    • {item.name} - ${item.price.toFixed(2)}
+                  </Text>
+                ))}
+                {processedReceipt.items.length > 3 && (
+                  <Text style={styles.moreText}>+{processedReceipt.items.length - 3} more items</Text>
+                )}
+              </View>
+            </View>
+          ) : (
+            <View style={styles.photoCaptured}>
+              <Text style={styles.previewTitle}>📸 Photo captured</Text>
+              <Text style={styles.previewSubtitle}>Tap below to process with OCR</Text>
+            </View>
+          )}
         </View>
       )}
       
@@ -72,7 +114,7 @@ export default function ScanScreen() {
               disabled={isProcessing}
             >
               <Text style={styles.primaryText}>
-                {isProcessing ? "Processing..." : "Use this photo"}
+                {isProcessing ? "Processing OCR..." : processedReceipt ? "Use Receipt" : "Process with OCR"}
               </Text>
             </Pressable>
             <Pressable style={styles.secondary} onPress={handleRetake}>
@@ -84,7 +126,9 @@ export default function ScanScreen() {
             <Text style={styles.secondaryText}>Choose from gallery</Text>
           </Pressable>
         )}
-        <Text style={styles.helper}>Demo mode: Using simulated OCR processing</Text>
+        <Text style={styles.helper}>
+          {processedReceipt ? "Receipt ready for item assignment" : "Using your backend OCR with pytesseract"}
+        </Text>
       </View>
     </SafeAreaView>
   );
@@ -110,5 +154,10 @@ const styles = StyleSheet.create({
     alignItems: "center",
   },
   previewTitle: { fontSize: 18, fontWeight: "600", color: "#111827", marginBottom: 8 },
-  previewSubtitle: { fontSize: 14, color: "#6b7280", textAlign: "center" }
+  previewSubtitle: { fontSize: 14, color: "#6b7280", textAlign: "center" },
+  receiptSummary: { alignItems: "center", padding: 20 },
+  itemsList: { marginTop: 16, alignItems: "flex-start" },
+  itemText: { fontSize: 14, color: "#374151", marginBottom: 4 },
+  moreText: { fontSize: 12, color: "#6b7280", fontStyle: "italic" },
+  photoCaptured: { alignItems: "center" }
 });
