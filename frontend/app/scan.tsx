@@ -95,6 +95,23 @@ export default function ScanScreen() {
                   <Text style={styles.moreText}>+{processedReceipt.items.length - 3} more items</Text>
                 )}
               </View>
+              
+              {/* Total Breakdown Section */}
+              <View style={styles.totalBreakdown}>
+                <Text style={styles.totalTitle}>💰 Total Breakdown</Text>
+                <View style={styles.totalRow}>
+                  <Text style={styles.totalLabel}>Subtotal:</Text>
+                  <Text style={styles.totalValue}>${processedReceipt.subtotal.toFixed(2)}</Text>
+                </View>
+                <View style={styles.totalRow}>
+                  <Text style={styles.totalLabel}>Tax:</Text>
+                  <Text style={styles.totalValue}>${processedReceipt.tax.toFixed(2)}</Text>
+                </View>
+                <View style={[styles.totalRow, styles.totalRowFinal]}>
+                  <Text style={styles.totalLabelFinal}>Total:</Text>
+                  <Text style={styles.totalValueFinal}>${processedReceipt.total.toFixed(2)}</Text>
+                </View>
+              </View>
             </View>
           ) : (
             <View style={styles.photoCaptured}>
@@ -159,5 +176,33 @@ const styles = StyleSheet.create({
   itemsList: { marginTop: 16, alignItems: "flex-start" },
   itemText: { fontSize: 14, color: "#374151", marginBottom: 4 },
   moreText: { fontSize: 12, color: "#6b7280", fontStyle: "italic" },
-  photoCaptured: { alignItems: "center" }
+  photoCaptured: { alignItems: "center" },
+  totalBreakdown: { 
+    marginTop: 20, 
+    padding: 16, 
+    backgroundColor: "#f8fafc", 
+    borderRadius: 12, 
+    borderWidth: 1, 
+    borderColor: "#e2e8f0",
+    width: "100%"
+  },
+  totalTitle: { fontSize: 16, fontWeight: "600", color: "#111827", marginBottom: 12, textAlign: "center" },
+  totalRow: { 
+    flexDirection: "row", 
+    justifyContent: "space-between", 
+    alignItems: "center",
+    marginBottom: 8
+  },
+  totalRowFinal: { 
+    flexDirection: "row", 
+    justifyContent: "space-between", 
+    alignItems: "center",
+    paddingTop: 8,
+    borderTopWidth: 1,
+    borderTopColor: "#e2e8f0"
+  },
+  totalLabel: { fontSize: 14, color: "#6b7280", fontWeight: "500" },
+  totalLabelFinal: { fontSize: 15, color: "#111827", fontWeight: "600" },
+  totalValue: { fontSize: 14, color: "#374151", fontWeight: "500" },
+  totalValueFinal: { fontSize: 16, color: "#111827", fontWeight: "700" }
 });
