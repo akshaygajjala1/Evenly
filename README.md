@@ -10,8 +10,6 @@ What bothered me most wasn’t the math — it was the friction. The technology 
 
 I wanted to build something that felt effortless: take a photo, confirm the details, split fairly, and send requests instantly — all from a polished mobile experience.
 
-I believe this can go much further in terms of easability and accessibility, as well. This app has the potential to transform experiences including taxes, receipt audits, and recollections. I would love to develop this further and make it available to the public.
-
 ## What it does
 
 Evenly is a mobile-first bill-splitting and receipt management platform designed to remove friction from shared expenses.
@@ -35,7 +33,7 @@ At its core, it allows users to:
 
 Rather than being just another “split calculator,” Evenly focuses on end-to-end flow and usability, ensuring users never feel lost or rushed through steps.
 
-## How we built it
+## How I built it
 
 The app is built as a cross-platform mobile application using a modern React Native / Expo stack, with a lightweight backend handling receipt uploads, OCR processing, and bill state management.
 
@@ -64,7 +62,7 @@ Persistent bill and request tracking
 
 Special care was taken to separate scanning logic from app UI logic, allowing the receipt pipeline to evolve independently from product features.
 
-## Challenges we ran into
+## Challenges I ran into
 
 ### Receipt OCR Noise & Inconsistent Formatting
 
@@ -88,26 +86,26 @@ If a user included themselves in a split, the app failed to surface that request
 
 Early versions felt like a prototype: inconsistent spacing, unclear actions, and screens that didn’t feel “finished.”
 
-**Solution:** Redesigned layouts using card-based components, clear primary/secondary actions, and consistent typography, spacing, and color usage. The result is a UI suitable for demos and real users.
+**Solution:** I redesigned layouts using card-based components, clear primary/secondary actions, and consistent typography, spacing, and color usage. The result is a UI suitable for demos and real users.
 
-## Accomplishments we’re proud of
+## Accomplishments I’m proud of
 
 - **End-to-End Receipt → Payment Flow**
-  Built a complete experience from camera capture to payment request without manual data entry.
+  I built a complete experience from camera capture to payment request without manual data entry.
 
 - **Robust Receipt Parsing Under Noise**
-  Successfully handled real-world receipts with messy OCR output while avoiding incorrect totals.
+  I successfully handled real-world receipts with messy OCR output while avoiding incorrect totals.
 
 - **Intuitive Bill Request System**
   Requests are clearly visible, trackable, and update correctly in real time.
 
 - **Demo-Ready Mobile UI**
-  The app now feels like a real product — not a hack — suitable for showcasing to users or investors.
+  The app now feels like a real product, not a hack, suitable for showcasing to users or investors.
 
 - **Scalable, Modular Design**
   Core systems (scanner, parser, UI, payments) are decoupled, making future improvements straightforward.
 
-## What we learned
+## What I learned
 
 This project reinforced several key lessons:
 
@@ -120,13 +118,15 @@ Most importantly, I learned that solving small, everyday frustrations can create
 
 ## What’s next
 
-The roadmap ahead focuses on turning Evenly into a truly delightful everyday tool:
+I believe this can go much further in terms of easability and accessibility, as well. This app has the potential to transform experiences including taxes, receipt audits, and recollections. I would love to develop this further and make it available to the public.
+
+The roadmap ahead focuses on turning Evenly into an everyday tool:
 
 - Smarter item-level split suggestions
 - Voice-based receipt review & corrections
 - Multi-currency and international receipts
-- Real payment integrations (Venmo, Stripe, Apple Pay)
 - Spending insights and group expense summaries
+- Financial analysis and reporting (taxes, audits, etc.)
 
 The long-term vision is simple:
-Make shared expenses effortless — no math, no awkward reminders, no friction.
+Make shared expenses effortless with no math, no awkward reminders, and no friction.
