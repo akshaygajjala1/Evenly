@@ -4,9 +4,11 @@ import { Pressable, SafeAreaView, StyleSheet, Text, View, Alert } from "react-na
 import Camera from "../components/Camera";
 import * as ImagePicker from "expo-image-picker";
 import { backendService, Receipt } from "../services/backend";
+import { useAppStore } from "../store/AppStore";
 
 export default function ScanScreen() {
   const router = useRouter();
+  const { actions } = useAppStore();
   const [capturedPhoto, setCapturedPhoto] = useState<any>(null);
   const [isProcessing, setIsProcessing] = useState(false);
   const [processedReceipt, setProcessedReceipt] = useState<Receipt | null>(null);
@@ -22,6 +24,12 @@ export default function ScanScreen() {
       return;
     }
 
+    if (processedReceipt) {
+      actions.setDraftReceipt(processedReceipt);
+      router.push("/review");
+      return;
+    }
+
     setIsProcessing(true);
     try {
       // Process the receipt image using your backend OCR
@@ -32,7 +40,13 @@ export default function ScanScreen() {
         "Receipt Processed!", 
         `Found ${receipt.items.length} items with total $${receipt.total.toFixed(2)}`,
         [
-          { text: "View Items", onPress: () => navigateToAssign(receipt) },
+          {
+            text: "Review",
+            onPress: () => {
+              actions.setDraftReceipt(receipt);
+              router.push("/review");
+            }
+          },
           { text: "Cancel", style: "cancel" }
         ]
       );
@@ -41,15 +55,6 @@ export default function ScanScreen() {
     } finally {
       setIsProcessing(false);
     }
-  };
-
-  const navigateToAssign = (receipt: Receipt) => {
-    // Store receipt data for the assign screen
-    // In a real app, you'd use a state management solution
-    router.push({
-      pathname: "/assign",
-      params: { receiptData: JSON.stringify(receipt) }
-    });
   };
 
   const handlePickImage = async () => {
@@ -116,7 +121,7 @@ export default function ScanScreen() {
           ) : (
             <View style={styles.photoCaptured}>
               <Text style={styles.previewTitle}>📸 Photo captured</Text>
-              <Text style={styles.previewSubtitle}>Tap below to process with OCR</Text>
+              <Text style={styles.previewSubtitle}>Tap below to scan</Text>
             </View>
           )}
         </View>
@@ -131,7 +136,7 @@ export default function ScanScreen() {
               disabled={isProcessing}
             >
               <Text style={styles.primaryText}>
-                {isProcessing ? "Processing OCR..." : processedReceipt ? "Use Receipt" : "Process with OCR"}
+                {isProcessing ? "Scanning..." : processedReceipt ? "Continue to review" : "Scan"}
               </Text>
             </Pressable>
             <Pressable style={styles.secondary} onPress={handleRetake}>
@@ -144,7 +149,7 @@ export default function ScanScreen() {
           </Pressable>
         )}
         <Text style={styles.helper}>
-          {processedReceipt ? "Receipt ready for item assignment" : "Using your backend OCR with pytesseract"}
+          {processedReceipt ? "Receipt ready to review" : "Center the receipt to your camera"}
         </Text>
       </View>
     </SafeAreaView>

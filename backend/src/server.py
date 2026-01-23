@@ -7,8 +7,9 @@ from PIL import Image
 import io
 import re
 import uuid
+import json
 from datetime import datetime
-from typing import List, Dict, Any
+from typing import List, Dict, Any, Optional, Tuple
 
 app = FastAPI(title="Evenly OCR API", version="1.0.0")
 
@@ -99,270 +100,341 @@ def extract_receipt_data(image_bytes: bytes) -> Dict[str, Any]:
                 best_text = text
         
         text = best_text if best_text else all_texts[0] if all_texts else ""
-        print(f"OCR extracted text: {text[:500]}...")
-        print(f"Full OCR text lines:")
-        for i, line in enumerate(text.strip().split('\n')):
-            print(f"  {i}: '{line}'")
-        
-        # Parse receipt items from OCR text
-        items = []
-        subtotal = 0.0
-        
-        lines = text.strip().split('\n')
-        i = 0
-        while i < len(lines):
-            line = lines[i].strip()
-            
-            if not line or len(line) < 3:
-                i += 1
+        def _log(event: str, **fields: Any) -> None:
+            payload = {"ts": datetime.now().isoformat(), "event": event}
+            payload.update(fields)
+            print(json.dumps(payload, ensure_ascii=False))
+
+        def _looks_like_noise(line_l: str) -> bool:
+            if not line_l:
+                return True
+            if "http" in line_l or "www" in line_l:
+                return True
+            if "thank" in line_l:
+                return True
+            if re.search(r"\b(trans|transaction)\b", line_l):
+                return True
+            if re.search(r"\b\d{2}[:\.]\d{2}\b", line_l):
+                return True
+            if re.search(r"\b\d{1,2}/\d{1,2}/\d{2,4}\b", line_l):
+                return True
+            return False
+
+        def _normalize_money_token(tok: str) -> str:
+            t = tok.strip()
+            t = t.replace(",", ".")
+            t = re.sub(r"[^0-9\.OSIlB]", "", t)
+
+            def _fix_char(m: re.Match) -> str:
+                c = m.group(0)
+                return {"O": "0", "S": "5", "I": "1", "l": "1", "B": "8"}.get(c, c)
+
+            t = re.sub(r"[OSIlB]", _fix_char, t)
+            t = re.sub(r"\.(?=\d$)", ".0", t)
+            return t
+
+        def _parse_money_from_str(s: str) -> Optional[float]:
+            s = s.strip()
+            if not s:
+                return None
+
+            s = _normalize_money_token(s)
+
+            m = re.search(r"(\d{1,4}\.\d{2})", s)
+            if m:
+                try:
+                    return float(m.group(1))
+                except:
+                    return None
+
+            m = re.search(r"(\d{1,4})\s+(\d{2})", s)
+            if m:
+                try:
+                    return float(f"{m.group(1)}.{m.group(2)}")
+                except:
+                    return None
+
+            m = re.search(r"\.?(\d{2})$", s)
+            if m and s.startswith("."):
+                try:
+                    return float(f"0.{m.group(1)}")
+                except:
+                    return None
+            return None
+
+        def _extract_money_at_end(line: str) -> Tuple[Optional[float], Optional[str]]:
+            raw = line.strip()
+            m = re.search(
+                r"([\$£€]?\s*(?:[0-9OSIlB]{1,5}[\.,\s][0-9OSIlB]{2}|\.[0-9OSIlB]{2}))\s*$",
+                raw,
+            )
+            if not m:
+                return None, None
+            tok = m.group(1)
+            val = _parse_money_from_str(tok)
+            return val, tok
+
+        def _is_money_only(line: str) -> bool:
+            v = _parse_money_from_str(line)
+            if v is None:
+                return False
+            rest = re.sub(r"[0-9\s\.,\$£€OSIlB]", "", line)
+            return rest.strip() == ""
+
+        def _clean_item_name(name: str) -> str:
+            n = name.strip()
+            n = re.sub(r"\s+", " ", n)
+            n = re.sub(r"^[^A-Za-z]+", "", n)
+            n = re.sub(r"[^A-Za-z0-9\s\-]", "", n)
+            n = n.strip()
+            if re.search(r"\b(subtotal|tax|total|balance|amount\s+due|due)\b", n.lower()):
+                return ""
+            if not re.search(r"[A-Za-z]", n):
+                return ""
+            return n
+
+        raw_lines = [ln.rstrip() for ln in text.replace("\r", "\n").split("\n")]
+        lines = []
+        for ln in raw_lines:
+            s = ln.strip()
+            if not s:
                 continue
-                
-            # Skip common non-item lines - more aggressive filtering
-            skip_keywords = [
-                'total', 'tax', 'subtotal', 'cash', 'credit', 'debit',
-                'change', 'thank', 'receipt', 'restaurant', 'menu', 'order',
-                'server', 'table', 'date', 'time', 'phone', 'address', 'www',
-                'com', 'inc', 'ltd', 'corp', 'gst', 'hst', 'vat', 'tip',
-                'payment', 'method', 'card', 'visa', 'mastercard', 'amex',
-                'amount', 'due', 'grand', 'sve', 'sum', 'invoice',
-                'bill', 'check', 'account', 'transaction', 'sale', 'purchase',
-                'svc', 'trans', 'plan', 'jesta', 'pizza', 'staff', 'housing',
-                'dining', 'university', 'texas', 'austin', 'kiosk', 'closed',
-                'thankyou', 'stopping', 'today', 'hookem', 'horns',
-                'item', 'items', 'quantity', 'qty', 'price', 'each', 'total'
-            ]
-            
-            # Skip lines that look like totals/summaries - but be more careful
-            if any(keyword in line.lower() for keyword in skip_keywords):
-                print(f"Skipping keyword line: '{line}'")
-                i += 1
+            s = re.sub(r"\s+", " ", s)
+            lines.append(s)
+
+        _log("ocr_text", raw_text=text, line_count=len(lines))
+
+        totals_keywords = [
+            "subtotal",
+            "sub total",
+            "tax",
+            "tex",
+            "tip",
+            "gratuity",
+            "total paid",
+            "totalpaid",
+            "total",
+            "amount due",
+            "due",
+        ]
+        excluded_total_keywords = [
+            "balance",
+            "account",
+            "meal",
+            "plan",
+        ]
+
+        candidate_total_idxs: List[int] = []
+        for idx, ln in enumerate(lines):
+            l = ln.lower()
+            if not any(k in l for k in totals_keywords):
                 continue
-            
-            # Only skip very short lines that are clearly totals
-            if len(line.split()) == 1 and re.search(r'\d+\.\d{2}\s*$', line):
-                print(f"Skipping obvious total line: '{line}'")
-                i += 1
+            v1, _ = _extract_money_at_end(ln)
+            nxt = lines[idx + 1] if idx + 1 < len(lines) else None
+            if v1 is not None or (nxt and _is_money_only(nxt)):
+                candidate_total_idxs.append(idx)
+
+        totals_start = min(candidate_total_idxs) if candidate_total_idxs else len(lines)
+        totals_start = max(0, totals_start)
+        item_end = totals_start
+
+        items: List[Dict[str, Any]] = []
+        item_candidates: List[Dict[str, Any]] = []
+
+        pending_name: Optional[str] = None
+
+        for idx in range(0, item_end):
+            ln = lines[idx]
+            l = ln.lower()
+
+            if _looks_like_noise(l):
+                _log("line_reject", kind="noise", line=ln, idx=idx)
                 continue
-            
-            # NEW: Handle broken formatting - look for quantity lines followed by price lines
-            if re.match(r'^\d+\s+\w+', line):  # Line starts with number and has text
-                # Check if next line has a price
-                if i + 1 < len(lines):
-                    next_line = lines[i + 1].strip()
-                    price_match = re.search(r'(\d+\.\d{2})', next_line)
-                    if price_match:
-                        price = float(price_match.group(1))
-                        
-                        # Only include reasonable prices
-                        if 0.5 <= price <= 200:
-                            # Extract item name from current line
-                            name = re.sub(r'^\d+\s+', '', line)  # Remove leading number
-                            name = re.sub(r'[^\w\s\-]', '', name)   # Remove special chars
-                            name = name.strip()
-                            
-                            if len(name) >= 2:
-                                items.append({
-                                    "id": str(uuid.uuid4()),
-                                    "name": name,
-                                    "price": price,
-                                    "quantity": 1
-                                })
-                                subtotal += price
-                                print(f"Found item (broken format): '{name}' - ${price}")
-                                i += 2  # Skip both lines
-                                continue
-            
-            # Original logic for normal formatting
-            # Look for price patterns at the end of line
-            price_match = re.search(r'(\d+\.\d{2})\s*$', line)
-            if not price_match:
-                # Try to find price with currency symbol
-                price_match = re.search(r'[\$£€]\s*(\d+\.\d{2})\s*$', line)
-            if not price_match:
-                # Try to find price patterns like "6.3" (single decimal)
-                price_match = re.search(r'(\d+\.\d{1,2})\s*$', line)
-            
-            if price_match:
-                price = float(price_match.group(1))
-                
-                # Only include reasonable prices (between $0.50 and $200)
-                if price < 0.5 or price > 200:
-                    print(f"Skipping unreasonable price: ${price} in line: '{line}'")
-                    i += 1
+
+            if _is_money_only(ln):
+                if pending_name:
+                    v = _parse_money_from_str(ln)
+                    if v is not None:
+                        item_candidates.append({"name": pending_name, "price": float(round(v, 2)), "quantity": 1, "raw_price": ln})
+                        _log("item_accept", mode="next_line_price", name=pending_name, price=float(round(v, 2)), idx=idx)
+                        pending_name = None
+                        continue
+                _log("line_reject", kind="money_only_no_pending", line=ln, idx=idx)
+                continue
+
+            price, price_tok = _extract_money_at_end(ln)
+            if price is not None:
+                name_part = ln[: len(ln) - len(price_tok)].strip()
+                name_part = re.sub(r"^\d+\s*", "", name_part)
+                clean_name = _clean_item_name(name_part)
+                if not clean_name:
+                    _log("line_reject", kind="bad_name_with_price", line=ln, idx=idx)
                     continue
-                
-                # Extract item name (everything before price)
-                name_part = line[:price_match.start()].strip()
-                
-                # Clean up the name - more aggressive cleaning
-                name = re.sub(r'^\d+\s*', '', name_part)  # Remove leading numbers
-                name = re.sub(r'\s*\d+$', '', name)     # Remove trailing numbers
-                name = re.sub(r'[^\w\s\-]', '', name)   # Remove special chars except hyphens
-                name = name.strip()
-                
-                # More lenient name validation
-                if len(name) >= 2 and (any(c.isalpha() for c in name) or len(name) >= 3):
-                    items.append({
-                        "id": str(uuid.uuid4()),
-                        "name": name,
-                        "price": price,
-                        "quantity": 1
-                    })
-                    subtotal += price
-                    print(f"Found item: '{name}' - ${price}")
-                else:
-                    print(f"Skipping line with invalid name: '{name}' from line: '{line}'")
+                if any(x in l for x in ["subtotal", "sub total", "tax", "tex", "total", "amount due", "balance"]):
+                    _log("line_reject", kind="total_line_as_item", line=ln, idx=idx)
+                    continue
+                if price <= 0 or price >= 500:
+                    _log("line_reject", kind="bad_price_range", line=ln, idx=idx, price=price)
+                    continue
+                item_candidates.append({"name": clean_name, "price": float(round(price, 2)), "quantity": 1, "raw_price": price_tok})
+                _log("item_accept", mode="same_line_price", name=clean_name, price=float(round(price, 2)), idx=idx)
+                pending_name = None
+                continue
+
+            clean_name = _clean_item_name(ln)
+            if clean_name:
+                pending_name = clean_name
+                _log("line_hold", kind="pending_item_name", line=ln, idx=idx)
             else:
-                # Debug: show lines that don't match price patterns
-                if len(line) > 5:  # Only show potentially interesting lines
-                    print(f"No price found in: '{line}'")
-            
-            i += 1
-        
-        print(f"Total items found: {len(items)}")
-        print(f"Items: {[item['name'] + ' $' + str(item['price']) for item in items]}")
-        
-        # Calculate tax and total from the OCR text
-        tax = 0.0
-        total = 0.0
-        
-        # Look for tax with multiple patterns
-        tax_patterns = [
-            r'tax.*?[\$£€]?\s*(\d+\.\d{2})',
-            r'gst.*?[\$£€]?\s*(\d+\.\d{2})',
-            r'hst.*?[\$£€]?\s*(\d+\.\d{2})',
-            r'vat.*?[\$£€]?\s*(\d+\.\d{2})',
-            r'sales\s+tax.*?[\$£€]?\s*(\d+\.\d{2})'
-        ]
-        
-        for pattern in tax_patterns:
-            tax_match = re.search(pattern, text, re.IGNORECASE)
-            if tax_match:
-                tax = float(tax_match.group(1))
-                print(f"Found tax: ${tax}")
-                break
-        
-        # Look for total with multiple patterns - prioritize TotalPaid, use SVC only as fallback
-        total_patterns = [
-            r'total\s+paid.*?(\d+\.\d{2})',  
-            r'total.*?(\d+\.\d{2})',
-            r'amount.*?(\d+\.\d{2})',
-            r'balance.*?(\d+\.\d{2})',
-            r'due.*?(\d+\.\d{2})',
-            r'grand\s+total.*?(\d+\.\d{2})'
-        ]
-        
-        # First try to find TotalPaid or other total patterns
-        for pattern in total_patterns:
-            total_match = re.search(pattern, text, re.IGNORECASE)
-            if total_match:
-                total = float(total_match.group(1))
-                print(f"Found total: ${total} using pattern: {pattern}")
-                break
-        
-        # Only use SVC as fallback if no total was found
-        if total == 0:
-            svc_match = re.search(r'svc.*?(\d+\.\d{2})', text, re.IGNORECASE)
-            if svc_match:
-                total = float(svc_match.group(1))
-                print(f"Using SVC as fallback total: ${total}")
-        
-        # Also try Balance as last resort
-        if total == 0:
-            balance_match = re.search(r'balance.*?(\d+\.\d{2})', text, re.IGNORECASE)
-            if balance_match:
-                total = float(balance_match.group(1))
-                print(f"Using Balance as fallback total: ${total}")
-        
-        # NEW RULE: If we have tax but no total, calculate total as subtotal + tax
-        if total == 0 and tax > 0 and subtotal > 0:
-            total = subtotal + tax
-            print(f"Calculated total as subtotal + tax: ${subtotal} + ${tax} = ${total}")
-        # If we have tax but total is wrong (equal to subtotal), recalculate
-        elif total > 0 and tax > 0 and abs(total - subtotal) < 0.01:
-            total = subtotal + tax
-            print(f"Total was equal to subtotal, recalculated as: ${subtotal} + ${tax} = ${total}")
-        
-        # If no tax found, calculate it proportionally
-        if tax == 0 and subtotal > 0:
-            # Common tax rates (you can adjust these)
-            tax_rates = [0.08, 0.0825, 0.09, 0.095, 0.1, 0.12, 0.13]
-            
-            for rate in tax_rates:
-                calculated_tax = subtotal * rate
-                # Check if this tax rate makes the total match
-                if abs((subtotal + calculated_tax) - total) < 0.01:
-                    tax = calculated_tax
-                    print(f"Calculated tax at {rate*100}%: ${tax}")
-                    break
-            
-            # If still no tax found, use default 8.25%
-            if tax == 0:
-                tax = subtotal * 0.0825
-                print(f"Using default tax rate: ${tax}")
-        
-        # If no total found, calculate it
-        if total == 0:
-            total = subtotal + tax
-            print(f"Calculated total: ${total}")
-        
-        # Validate the totals with smart logic
-        if total < subtotal:
-            print(f"Warning: Total (${total}) is less than subtotal (${subtotal})")
-            # Recalculate total
-            total = subtotal + tax
-        # NEW: Validate total is reasonable compared to subtotal
-        elif subtotal > 0 and total > 0:
-            # If total is more than 10x subtotal, it's probably wrong (like Balance amount)
-            if total > subtotal * 10:
-                print(f"Warning: Total (${total}) is way too high compared to subtotal (${subtotal})")
-                total = subtotal + tax
-                print(f"Using calculated total instead: ${total}")
-            # If total is very close to subtotal but we have tax, recalculate
-            elif tax > 0 and abs(total - subtotal) < 1.0:
-                total = subtotal + tax
-                print(f"Total was too close to subtotal, recalculated as: ${subtotal} + ${tax} = ${total}")
-            # If total seems reasonable but doesn't match subtotal + tax, still use calculated total
-            elif tax > 0 and abs(total - (subtotal + tax)) > 0.5:
-                calculated_total = subtotal + tax
-                print(f"Total (${total}) doesn't match calculated total (${calculated_total}), using calculated")
-                total = calculated_total
-        # NEW: Handle case where no items found but we have tax and a suspicious total
-        elif subtotal == 0 and tax > 0 and total > 0:
-            # If total is very high (like balance amount) but we have tax, it's probably wrong
-            if total > 50:  # Arbitrary threshold for suspiciously high totals
-                print(f"Warning: No items found but total (${total}) is very high with tax (${tax})")
-                # Try to find a more reasonable total from the text
-                reasonable_totals = []
-                for line in text.strip().split('\n'):
-                    # Look for smaller amounts that could be the real total
-                    small_match = re.search(r'(\d+\.\d{2})', line)
-                    if small_match:
-                        amount = float(small_match.group(1))
-                        if 5 <= amount <= 50:  # Reasonable receipt total range
-                            reasonable_totals.append(amount)
-                
-                if reasonable_totals:
-                    # Use the largest reasonable amount (likely the real total)
-                    reasonable_total = max(reasonable_totals)
-                    print(f"Found reasonable total: ${reasonable_total}")
-                    total = reasonable_total
+                _log("line_reject", kind="no_price_no_name", line=ln, idx=idx)
+
+        totals_found: Dict[str, float] = {"subtotal": 0.0, "tax": 0.0, "tip": 0.0, "total": 0.0}
+        totals_source: Dict[str, str] = {"subtotal": "", "tax": "", "tip": "", "total": ""}
+
+        def _label_matches(label: str, line_l: str) -> bool:
+            if label == "tax":
+                return bool(re.search(r"\b(tax|tex)\b", line_l))
+            if label == "subtotal":
+                return bool(re.search(r"\bsub\s*tot[a-z0-9]*\b", line_l))
+            if label == "tip":
+                return bool(re.search(r"\b(tip|gratuity)\b", line_l))
+            if label == "total":
+                return bool(re.search(r"\btotal\b", line_l))
+            return label in line_l
+
+        def _try_label_value(label: str, ln: str, nxt: Optional[str]) -> Optional[float]:
+            l = ln.lower()
+            if not _label_matches(label, l):
+                return None
+            v1, _ = _extract_money_at_end(ln)
+            if v1 is not None:
+                return v1
+            if nxt and _is_money_only(nxt):
+                return _parse_money_from_str(nxt)
+            return None
+
+        for idx in range(totals_start, len(lines)):
+            ln = lines[idx]
+            l = ln.lower()
+            nxt: Optional[str] = lines[idx + 1] if idx + 1 < len(lines) else None
+
+            if any(k in l for k in excluded_total_keywords):
+                _log("totals_skip", reason="excluded_keyword", line=ln, idx=idx)
+                continue
+
+            v = _try_label_value("subtotal", ln, nxt)
+            if v is not None:
+                totals_found["subtotal"] = float(round(v, 2))
+                totals_source["subtotal"] = ln
+                _log("totals_pick", label="subtotal", value=totals_found["subtotal"], idx=idx, line=ln)
+                continue
+
+            v = _try_label_value("tax", ln, nxt)
+            if v is not None:
+                totals_found["tax"] = float(round(v, 2))
+                totals_source["tax"] = ln
+                _log("totals_pick", label="tax", value=totals_found["tax"], idx=idx, line=ln)
+                continue
+
+            v = _try_label_value("tip", ln, nxt)
+            if v is not None:
+                totals_found["tip"] = float(round(v, 2))
+                totals_source["tip"] = ln
+                _log("totals_pick", label="tip", value=totals_found["tip"], idx=idx, line=ln)
+                continue
+
+            if "totalpaid" in l or "total paid" in l:
+                v1, _ = _extract_money_at_end(ln)
+                if v1 is None and nxt and _is_money_only(nxt):
+                    v1 = _parse_money_from_str(nxt)
+                if v1 is not None:
+                    totals_found["total"] = float(round(v1, 2))
+                    totals_source["total"] = ln
+                    _log("totals_pick", label="total", value=totals_found["total"], idx=idx, line=ln)
+                    continue
+
+            if _label_matches("total", l):
+                v1, _ = _extract_money_at_end(ln)
+                if v1 is None and nxt and _is_money_only(nxt):
+                    v1 = _parse_money_from_str(nxt)
+                if v1 is not None and totals_found["total"] == 0.0:
+                    totals_found["total"] = float(round(v1, 2))
+                    totals_source["total"] = ln
+                    _log("totals_pick", label="total", value=totals_found["total"], idx=idx, line=ln)
+                    continue
+
+        for it in item_candidates:
+            items.append({
+                "id": str(uuid.uuid4()),
+                "name": it["name"],
+                "price": float(round(it["price"], 2)),
+                "quantity": int(it.get("quantity", 1)),
+            })
+
+        items_sum = float(round(sum(float(i["price"]) for i in items), 2))
+        subtotal = totals_found["subtotal"] if totals_found["subtotal"] > 0 else items_sum
+        tax = totals_found["tax"]
+        tip = totals_found["tip"]
+        total = totals_found["total"]
+
+        if totals_found["subtotal"] > 0 and items_sum > 0:
+            diff = float(round(totals_found["subtotal"] - items_sum, 2))
+            if abs(diff) > 0.5 and len(items) >= 1:
+                low_items = [i for i, it in enumerate(item_candidates) if float(it["price"]) < 1.0 and str(it.get("raw_price", "")).strip().startswith(".")]
+                if len(low_items) == 1:
+                    j = low_items[0]
+                    others = float(round(items_sum - float(item_candidates[j]["price"]), 2))
+                    candidate_price = float(round(totals_found["subtotal"] - others, 2))
+                    if 1.0 <= candidate_price <= 200.0:
+                        items[j]["price"] = candidate_price
+                        items_sum = float(round(sum(float(i["price"]) for i in items), 2))
+                        _log("item_price_adjust", idx=j, new_price=candidate_price, reason="subtotal_alignment")
+
+        if totals_found["subtotal"] > 0:
+            subtotal = totals_found["subtotal"]
+        else:
+            subtotal = items_sum
+
+        if total == 0.0 and subtotal > 0:
+            total = float(round(subtotal + tax + tip, 2))
+            _log("total_infer", total=total, reason="subtotal_tax_tip")
+
+        if totals_found["subtotal"] > 0 and totals_found["total"] > 0:
+            expected = float(round(subtotal + tax + tip, 2))
+            if abs(expected - totals_found["total"]) > 0.5:
+                implied_tax = float(round(totals_found["total"] - subtotal - tip, 2))
+                if 0 <= implied_tax <= max(0.01, float(round(subtotal * 0.3, 2))):
+                    _log(
+                        "tax_adjust",
+                        old_tax=tax,
+                        new_tax=implied_tax,
+                        reason="subtotal_total_implied",
+                        subtotal=subtotal,
+                        total=totals_found["total"],
+                    )
+                    tax = implied_tax
                 else:
-                    # Fallback: just use tax as a minimal total
-                    total = tax
-                    print(f"No reasonable total found, using tax as total: ${total}")
-        
-        print(f"Final breakdown: Subtotal: ${subtotal}, Tax: ${tax}, Total: ${total}")
-        
+                    _log(
+                        "consistency_warn",
+                        kind="subtotal_tax_tip_mismatch",
+                        subtotal=subtotal,
+                        tax=tax,
+                        tip=tip,
+                        total=totals_found["total"],
+                        expected=expected,
+                    )
+
+        _log("parse_result", items_count=len(items), items_sum=items_sum, subtotal=subtotal, tax=tax, tip=tip, total=total)
+
         result = {
             "id": str(uuid.uuid4()),
             "items": items,
             "subtotal": subtotal,
             "tax": tax,
-            "tip": 0.0,
+            "tip": tip,
             "total": total,
             "created_at": datetime.now().isoformat(),
-            "raw_text": text  # Include raw OCR text for debugging
+            "raw_text": text
         }
         
         print(f"OCR result: {result}")

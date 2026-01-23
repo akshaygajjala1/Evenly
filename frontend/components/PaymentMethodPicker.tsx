@@ -3,8 +3,17 @@ import { Pressable, StyleSheet, Text, View } from "react-native";
 
 const methods = ["Stripe", "PayPal", "Venmo", "Manual"];
 
-export default function PaymentMethodPicker() {
+interface PaymentMethodPickerProps {
+  onMethodChange?: (method: string) => void;
+}
+
+export default function PaymentMethodPicker({ onMethodChange }: PaymentMethodPickerProps) {
   const [selected, setSelected] = useState(methods[0]);
+
+  const handleSelect = (method: string) => {
+    setSelected(method);
+    onMethodChange?.(method);
+  };
 
   return (
     <View style={styles.container}>
@@ -13,7 +22,7 @@ export default function PaymentMethodPicker() {
         {methods.map((m) => (
           <Pressable
             key={m}
-            onPress={() => setSelected(m)}
+            onPress={() => handleSelect(m)}
             style={[styles.option, selected === m && styles.optionSelected]}
           >
             <Text style={[styles.optionText, selected === m && styles.optionTextSelected]}>
