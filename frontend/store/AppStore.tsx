@@ -280,6 +280,31 @@ export function AppStoreProvider({ children }: { children: React.ReactNode }) {
     didSeedDemo.current = true;
   }, [state.friends.length]);
 
+  // Force clear receipts and bills for clean demo
+  useEffect(() => {
+    if (!didHydrate.current) return;
+    //FOR DEMO ONLY
+    // Remove any friends named Josh and keep only Alex
+    const friendsWithoutJosh = state.friends.filter(f => f.name.trim().toLowerCase() !== "josh");
+    const hasAlex = friendsWithoutJosh.some(f => f.id === "alex" || f.name.trim().toLowerCase() === "alex");
+    
+    // Add Alex if not present
+    const finalFriends = hasAlex ? friendsWithoutJosh : [
+      { id: "alex", name: "Alex", phone: "+1 555 0100", color: "#22c55e" },
+      ...friendsWithoutJosh
+    ];
+    
+    // Clear receipts and bills for clean demo
+    const nextState: AppState = {
+      ...state,
+      friends: finalFriends,
+      receipts: [],
+      bills: [],
+      draftSplit: null
+    };
+    dispatch({ type: "hydrate", state: nextState });
+  }, [didHydrate.current]);
+
   const store = useMemo<AppStore>(() => {
     return {
       state,

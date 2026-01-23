@@ -105,14 +105,17 @@ Early versions felt like a prototype: inconsistent spacing, unclear actions, and
 - **Scalable, Modular Design**
   Core systems (scanner, parser, UI, payments) are decoupled, making future improvements straightforward.
 
+- **Expo Go Debugging Mastery**
+  Successfully debugged and resolved countless Expo Go errors, from camera permissions to navigation state issues, ensuring smooth mobile development workflow.
+
 ## What I learned
 
 This project reinforced several key lessons:
 
-- UX matters as much as algorithms — even perfect OCR fails if the flow is confusing
-- Explicit state > implicit assumptions in mobile navigation
-- Real-world data is messy, and systems must be defensive
-- A great demo requires polish, not just functionality
+- **OCR is hard**: I learned that real-world receipts are incredibly messy, and even the best OCR engines struggle with font variations, lighting conditions, and layout inconsistencies. I had to build a robust parsing pipeline with careful validation and error handling to make it work reliably.
+- **Explicit state > implicit assumptions in mobile navigation**: I discovered that enforcing explicit user actions and clear navigation transitions helps prevent confusion and lost context. This was crucial for keeping users from getting lost in the app flow.
+- **Real-world data requires defensive systems**: I found that scanning real-world receipts means handling endless variations in format, quality, and content. I had to design systems that were broad enough to handle anything while specific enough to extract accurate data, which required extensive validation and fallback mechanisms.
+- **Expo simplifies mobile development, but doesn't eliminate complexity**: While Expo provided a powerful framework for building cross-platform apps, I learned it still requires careful attention to navigation state, camera permissions, and other mobile-specific details that can make or break the user experience.
 
 Most importantly, I learned that solving small, everyday frustrations can create products people immediately understand and appreciate.
 
